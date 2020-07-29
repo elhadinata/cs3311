@@ -1,0 +1,68 @@
+#!/srvr/cs3311psql/lib/php525/bin/php
+<?php
+
+
+define("LIB_DIR","/import/adams/1/cs3311/public_html/19s1/assignments/a2");
+require_once(LIB_DIR."/db.php");
+
+define("DB_CONNECTION","dbname=a2");
+
+
+if ($argc!=4) exit("Usage: ./shortest <NAME> <Degree1> <Degree2>\n");
+$name = $argv[1];
+$d1 = $argv[2];
+$d2 = $argv[3];
+if ($d1 > $d2)  exit("Usage: ./shortest <NAME> <Degree1> <Degree2>\n");
+
+
+$db = dbConnect("dbname=a2");
+
+$q = "select name, id from Actor where name ~* '".$name."' limit 1";
+$n = dbQuery($db, $q);
+$n = dbNext($n);
+$name = $n[0];
+$id = $n[1];
+
+
+
+$rec = "
+WITH RECURSIVE Relation(actor_id, movie_id, level) AS (
+    SELECT actor_id, movie_id, 0 from Acting a where actor_id=%s 
+    UNION 
+    (
+        WITH NB (actor_id, movie_id, level) AS 
+        (Select 
+                b.actor_id, ac.movie_id, level
+        
+        from Acting ac ,Relation b 
+        where ac.actor_id = b.actor_id
+            )
+        
+        SELECT distinct a.actor_id, 
+                        a.movie_id, 
+                        level+1 
+        from Acting a
+        inner join NB b 
+            on a.movie_id = b.movie_id 
+        where level+1 <= %d and a.actor_id!=b.actor_id
+        
+    )
+    
+)
+
+, Q (actor_id) as (
+    select distinct r.actor_id from Relation r 
+    where r.actor_id != ".$id."
+) select a.name, min(r.level) as depth from Actor a, Q q, Relation r where
+a.id = q.actor_id and q.actor_id=r.actor_id 
+group by a.name having min(r.level)>=".$d1." 
+order by depth, a.name;
+
+";
+
+$result = dbQuery($db, mkSQL($rec,$id, $d2));
+$c=0;
+while($i = dbNext($result)) {
+        echo ++$c.". ".$i[0]." (".$i[1].")\n";    
+}
+?>

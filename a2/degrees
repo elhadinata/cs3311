@@ -1,0 +1,67 @@
+#!/srvr/cs3311psql/lib/php525/bin/php
+<?php
+
+define("LIB_DIR","/import/adams/1/cs3311/public_html/19s1/assignments/a2");
+require_once(LIB_DIR."/db.php");
+
+define("DB_CONNECTION","dbname=a2");
+
+if ($argc < 4) exit("Usage: ./degrees Name M N\n");
+$name = $argv[1];
+$m = $argv[2];
+$n = $argv[3];
+
+if ($d1 > $d2) exit("Usage: ./degrees Name M N\n");
+
+$db = dbConnect("dbname=a2");
+
+# our actor
+$qry = "
+    select name, id
+    from Actor
+    where name ~* '".$name."'
+    limit 1
+";
+$res = dbQuery($db, $qry);
+$res = dbNext($res);
+$name = $res["name"];
+$id = $res["id"];
+
+
+$rec = "
+with recursive Levels(actor_id, movie_id, level) as (
+        select actor_id, movie_id, 0
+        from Acting
+        where actor_id = %d
+    union
+        (
+        with curr_level(actor_id, movie_id, level) as (
+            select l.actor_id, a.movie_id, l.level
+            from Acting a, Levels l
+            where a.actor_id = l.actor_id
+        )
+        select distinct a.actor_id, a.movie_id, level+1
+        from Acting a
+        inner join curr_level c on a.movie_id = c.movie_id
+        where level+1 <= %d
+        and a.actor_id!=c.actor_id
+        )
+), Bacons(actor_id) as (
+    select distinct actor_id
+    from Levels
+    where actor_id != ".$id."
+)
+select a.name, min(l.level)
+from Actor a, Levels l, Bacons b
+where a.id = b.actor_id and b.actor_id = l.actor_id
+group by a.name having min(l.level) >= ".$m."
+order by min(l.level), a.name;
+";
+
+$fres = dbQuery($db, mkSQL($rec, $id, $n));
+$i = 1;
+while ($t = dbNext($fres)) {
+    printf("%d. %s (%d)\n", $i++, $t[0], $t[1]);
+}
+
+?>

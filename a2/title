@@ -1,0 +1,54 @@
+#!/srvr/cs3311psql/lib/php525/bin/php
+<?php
+
+define("LIB_DIR","/import/adams/1/cs3311/public_html/19s1/assignments/a2");
+require_once(LIB_DIR."/db.php");
+
+define("DB_CONNECTION","dbname=a2");
+
+if ($argc < 2) exit("Usage: ./title <Title>\n");
+$name = $argv[1];
+
+$db = dbConnect("dbname=a2");
+
+$qry1 = <<<xxSQLxx
+select distinct m.title, m.year, m.content_rating, r.imdb_score
+from Movie m, Acting c, Rating r
+where m.title ~* %s
+and c.movie_id = m.id
+and m.id=r.movie_id
+order by m.year asc, r.imdb_score desc;
+xxSQLxx;
+
+$qry2 = <<<xxSQLxx
+select distinct g.genre
+from Genre g, Movie m
+where m.title ~* %s and g.movie_id = m.id
+order by g.genre
+xxSQLxx;
+
+$res = dbQuery($db, mkSQL($qry1,$name));
+$i = 1;
+while ($t = dbNext($res)) {
+    if ($t["year"]) {
+        printf("%d. %s (%s, %s, %s)", $i++, $t["title"], $t["year"], $t["content_rating"], $t["imdb_score"]);
+    } else {
+        printf("%d. %s (%s, %s)", $i++, $t["title"], $t["content_rating"], $t["imdb_score"]);
+    }
+
+    $gen = dbQuery($db, mkSQL($qry2,$t["title"]));
+    if (dbNResults($gen) != 0) {
+        printf(" [");
+        $c = 1;
+        while ($g = dbNext($gen)) {
+            printf("%s", $g["genre"]);
+            if ($c != dbNResults($gen))
+                printf(",");
+            $c++;
+        }
+        printf("]");
+    }
+    printf("\n");
+}
+
+?>

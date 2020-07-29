@@ -1,0 +1,67 @@
+#!/srvr/cs3311psql/lib/php525/bin/php
+<?php
+
+
+define("LIB_DIR","/import/adams/1/cs3311/public_html/19s1/assignments/a2");
+require_once(LIB_DIR."/db.php");
+
+define("DB_CONNECTION","dbname=a2");
+
+if ($argc!=3) exit("Usage: ./shortest Name1 Name2\n");
+$name1 = $argv[1];
+$name2 = $argv[2];
+
+$db = dbConnect("dbname=a2");
+
+$qry = "
+    select id, name
+    from Actor
+    where name ~* %s
+    limit 1
+";
+
+$res1 = dbOneTuple($db, mkSQL($qry, $name1));
+$res2 = dbOneTuple($db, mkSQL($qry, $name2));
+
+# actor 1
+$act1 = $res1["name"];
+$aid1 = $res1["id"];
+# actor 2
+$act2 = $res2["name"];
+$aid2 = $res2["id"];
+
+
+$rec = "
+with recursive levels(id, name, level, str) AS (
+    select id, name, 0, ''
+    from Actor
+    where id = $aid1
+union
+    select a.id, a.name, l.level+1,
+           l.str || '; ' || l.name || ' was in ' ||
+           m.title || ' with ' || a.name || ' '
+    from Levels l
+    join Acting a1 on l.id = a1.actor_id
+    join Movie m on m.id = a1.movie_id
+    join Acting a2 ON m.id = a2.movie_id
+    join Actor a on a.id = a2.actor_id
+    where l.id != a.id and l.level + 1 <= 6
+), paths(id, level) AS (
+    select id, min(level)
+    from levels
+    group by id
+)
+select id, name, level, str
+from levels
+where (id, level) in (select * from paths)
+order by level
+";
+
+$res = dbQuery($db, mkSQL($rec));
+$i = 1;
+while ($t = dbNext($res)) {
+    printf("%d. %s\n", $i++, $t["str"]);
+}
+
+
+?>

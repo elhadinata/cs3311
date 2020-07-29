@@ -1,0 +1,77 @@
+#!/srvr/cs3311psql/lib/php525/bin/php
+<?php
+
+define("LIB_DIR","/import/adams/1/cs3311/public_html/19s1/assignments/a2");
+require_once(LIB_DIR."/db.php");
+
+define("DB_CONNECTION","dbname=a2");
+
+if ($argc < 4) exit("Usage: ./toprank [Genres] K StartYear EndYear\n");
+if ($argc == 4) {
+    $k = $argv[1];
+    $startyear = $argv[2];
+    $endyear = $argv[3];
+} else {
+    $genstr=$argv[1];
+    $k = $argv[2];
+    $startyear = $argv[3];
+    $endyear = $argv[4];
+
+    $genres=explode("&", $genstr);
+    sort($genres);
+}
+
+if (!(($k >= 1) && ($k <= 1000))) exit("Usage: 1 <= K <= 1000\n");
+if ($startyear <= 1900 || $endyear >= 2020 || $startyear > $endyear)
+    exit("Usage: 1900 <= StartYear <= EndYear < 2020");
+
+$db = dbConnect("dbname=a2");
+
+if (!$genres) {
+  $qry = "
+    select distinct m.title, m.year, m.content_rating, m.lang, r.imdb_score, r.num_voted_users
+    from Movie m, Rating r
+    where m.id = r.movie_id
+    and m.year is not null
+    and m.year >= %d and m.year <= %d
+    order by r.imdb_score desc, r.num_voted_users desc
+    limit %d
+  ";
+
+  $res = dbQuery($db, mkSQL($qry,$startyear,$endyear,$k));
+  $i = 1;
+  while ($t = dbNext($res)) {
+      printf("%d. %s (%s, %s, %s) [%s, %s]\n",
+      $i++, $t["title"], $t["year"], $t["content_rating"], $t["lang"], $t["imdb_score"], $t["num_voted_users"]);
+  }
+} else {
+  $qry = "
+    select count(m.title), m.title, m.year, m.content_rating, m.lang, r.imdb_score, r.num_voted_users
+    from Movie m, Rating r, Genre g
+    where g.genre in (";
+
+    for ($i=0; $i<count($genres); $i++) {
+        if ($i != 0) $qry=$qry.",";
+        $qry = $qry."'".$genres[$i]."'";
+    }
+
+    $qry=$qry.")
+    and m.id = g.movie_id
+    and m.year is not null
+    and m.year >= %d and m.year <= %d
+    and m.id = r.movie_id
+    group by m.title, m.year, m.content_rating, m.lang, r.imdb_score, r.num_voted_users
+    order by r.imdb_score desc, r.num_voted_users desc
+  ";
+
+  $res = dbQuery($db, mkSQL($qry,$startyear,$endyear));
+  $i = 1;
+  while ($t = dbNext($res)) {
+      if ($t[0] >= count($genres) && $i <= $k) {
+          printf("%d. %s (%s, %s, %s) [%s, %s]\n",
+          $i++, $t["title"], $t["year"], $t["content_rating"], $t["lang"], $t["imdb_score"], $t["num_voted_users"]);
+      }
+  }
+}
+
+?>

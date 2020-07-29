@@ -1,0 +1,130 @@
+#!/srvr/cs3311psql/lib/php525/bin/php
+<?php
+
+define("LIB_DIR","/import/adams/1/cs3311/public_html/19s1/assignments/a2");
+require_once(LIB_DIR."/db.php");
+
+define("DB_CONNECTION","dbname=a2");
+
+if ($argc < 3) exit("Usage: ./similar Title N\n");
+$str = $argv[1];
+$n = $argv[2];
+
+if (!(($n >= 1) && ($n <= 1000))) exit("Usage: 1 <= N <= 1000\n");
+
+$db = dbConnect("dbname=a2");
+
+# curr movie
+$m_qry = "
+    select id, title
+    from Movie
+    where title ilike %s
+    order by year
+    limit 1
+";
+$m_res = dbOneTuple($db, mkSQL($m_qry,$str));
+$m_title = $m_res["title"];
+$m_id = $m_res["id"];
+
+# curr movie's genres
+$g_qry = "
+    select genre
+    from Genre
+    where movie_id = %d
+";
+$g_res = dbQuery($db, mkSQL($g_qry,$m_id));
+
+# curr movie's keywords
+$k_qry = "
+    select keyword
+    from Keyword
+    where movie_id = %d
+";
+$k_res = dbQuery($db, mkSQL($k_qry,$m_id));
+
+
+
+# count of common genres
+$c_qry = "create or replace view Common_Gen(movie_id, title, genres) as
+    select m.id,  m.title, count(g.genre)
+    from Movie m, Genre g
+    where m.id != ".$m_id."
+    and m.id = g.movie_id
+    and g.genre IN(
+";
+
+$i = 0;
+while ($t = dbNext($g_res)) {
+    if ($i != 0) $c_qry=$c_qry.",";
+    $c_qry = $c_qry."'".$t["genre"]."'";
+    $i++;
+}
+
+$c_qry = $c_qry.")
+    group by m.id, m.title
+    order by count(g.genre) desc
+";
+
+$c_res = dbQuery($db, mkSQL($c_qry,$m_id));
+
+
+# count of common keywords
+$ck_qry = "create or replace view Common_Key(movie_id, title, keywords) as
+    select m.id,  m.title, count(k.keyword)
+    from Movie m, Keyword k
+    where m.id != ".$m_id."
+    and m.id = k.movie_id
+    and k.keyword IN(
+";
+
+$i = 0;
+while ($t = dbNext($k_res)) {
+    if ($i != 0) $ck_qry=$ck_qry.",";
+    $ck_qry = $ck_qry."'".$t["keyword"]."'";
+    $i++;
+}
+
+$ck_qry = $ck_qry.")
+    group by m.id, m.title
+    order by count(k.keyword) asc
+";
+
+$ck_res = dbQuery($db, mkSQL($ck_qry,$m_id));
+
+
+# find common movies with max common genres, then max number keywords,
+# then imdb, then votes
+
+$view_cm = "create or replace view Common_Mov(title, year, genres, keywords, imdb_score, num_voted_users) as
+    select m.title, m.year, g.genres, coalesce(k.keywords, 0), r.imdb_score, r.num_voted_users
+    from Movie m
+    inner join Common_Gen g on m.id = g.movie_id
+    left join Common_Key k on m.id = k.movie_id
+    inner join Rating r on m.id = r.movie_id
+";
+
+dbQuery($db, $view_cm);
+
+$qry = "
+    select *
+    from Common_Mov
+    order by genres desc,
+             keywords desc,
+             imdb_score desc,
+             num_voted_users desc
+";
+
+$res = dbQuery($db, $qry);
+
+$i = 1;
+while (($t = dbNext($res)) && ($i <= $n)) {
+    if ($t["year"]) {
+        printf("%d. %s (%s) [%s, %s, %s, %s]\n",
+            $i++, $t["title"], $t["year"], $t["genres"], $t["keywords"], $t["imdb_score"], $t["num_voted_users"]);
+    } else {
+        printf("%d. %s [%s, %s, %s, %s]\n",
+            $i++, $t["title"], $t["genres"], $t["keywords"], $t["imdb_score"], $t["num_voted_users"]);
+    }
+}
+
+?>
